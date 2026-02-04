@@ -655,6 +655,9 @@
 
     // Progress bar click
     progressBar.addEventListener('click', (e) => {
+      // Guard against invalid duration
+      if (!audio.duration || isNaN(audio.duration) || audio.duration === 0) return;
+
       const rect = progressBar.getBoundingClientRect();
       const percent = (e.clientX - rect.left) / rect.width;
       audio.currentTime = percent * audio.duration;
@@ -662,6 +665,9 @@
 
     // Update progress
     audio.addEventListener('timeupdate', () => {
+      // Guard against invalid duration
+      if (!audio.duration || isNaN(audio.duration) || audio.duration === 0) return;
+
       const percent = (audio.currentTime / audio.duration) * 100;
       progressFill.style.width = percent + '%';
       currentTimeEl.textContent = formatTime(audio.currentTime);
@@ -694,11 +700,14 @@
 
       try {
         // Send message to background to handle download
-        chrome.runtime.sendMessage({
+        const response = await chrome.runtime.sendMessage({
           action: 'downloadAudio',
           url: audio.src,
-          filename: options.filename || 'article.mp3'
+          filename: options.filename || options.title || 'article'
         });
+        if (response && !response.success) {
+          console.error('Download failed:', response.error);
+        }
       } catch (error) {
         console.error('Download error:', error);
       }

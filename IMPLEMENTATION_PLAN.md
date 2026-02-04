@@ -83,11 +83,27 @@ Core functionality implemented. Ready for manual testing.
 - Current: Audio not cached between sessions
 - Future: IndexedDB caching for offline playback
 
-### Edge Cases to Test
+### Edge Cases (Still Need Testing)
 - [ ] Paywalled articles (should extract visible content only)
 - [ ] Very long articles (10,000+ chars)
 - [ ] Pages without articles
 - [ ] Non-HTTP pages (chrome://, file://)
+
+---
+
+## Bug Fixes (v0.0.2)
+
+1. **Blob URL Memory Leak Fixed** - Added automatic cleanup of blob URLs after 30 minutes via TTL mechanism in background.js. Object URLs are now properly revoked to prevent memory leaks.
+
+2. **Tab ID Null Check Added** - Added validation for tab ID in convertArticle message handler. Returns proper error if tab ID cannot be determined.
+
+3. **TTS API Timeout Added** - Added 60-second timeout for TTS API calls using AbortController to prevent indefinite hangs.
+
+4. **Empty Filename Handling** - Improved filename sanitization to handle empty titles with fallback to 'article'.
+
+5. **Async Download Fixed** - Fixed the download button handler to properly await the message response from background script.
+
+6. **Division by Zero Guard** - Added guards for invalid audio duration in progress bar click handler and timeupdate handler.
 
 ---
 

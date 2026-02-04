@@ -12,7 +12,11 @@ const MAX_CHUNK_SIZE = 4000; // Leave buffer below 4096 limit
 const VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
 // Conversion queue for managing concurrent requests
+// Stores blob URLs for download - cleaned up after download or timeout
 const conversionQueue = new Map();
+
+// Auto-cleanup blob URLs after 30 minutes
+const BLOB_URL_TTL_MS = 30 * 60 * 1000;
 
 /**
  * Initialize extension on install
@@ -66,7 +70,12 @@ async function handleMessage(message, sender, sendResponse) {
         break;
 
       case 'convertArticle':
-        await convertArticle(message.article, sender.tab?.id);
+        const tabId = sender.tab?.id;
+        if (!tabId) {
+          sendResponse({ success: false, error: 'Cannot determine tab ID' });
+          break;
+        }
+        await convertArticle(message.article, tabId);
         sendResponse({ success: true });
         break;
 
@@ -142,13 +151,20 @@ async function convertArticle(article, tabId) {
     const blob = new Blob([finalAudio], { type: 'audio/mpeg' });
     const audioUrl = URL.createObjectURL(blob);
 
-    // Store in cache for download
-    conversionQueue.set(article.url, {
+    // Store in cache for download with TTL for cleanup
+    const cacheEntry = {
       audioUrl,
       blob,
       title: article.title,
-      author: article.author
-    });
+      author: article.author,
+      createdAt: Date.now()
+    };
+    conversionQueue.set(article.url, cacheEntry);
+
+    // Schedule cleanup after TTL
+    setTimeout(() => {
+      cleanupConversionEntry(article.url);
+    }, BLOB_URL_TTL_MS);
 
     // Increment usage
     await Storage.incrementUsage();
@@ -222,42 +238,59 @@ function chunkText(text) {
   return chunks;
 }
 
+// Timeout for TTS API calls (60 seconds per chunk)
+const TTS_API_TIMEOUT_MS = 60000;
+
 /**
- * Call OpenAI TTS API
+ * Call OpenAI TTS API with timeout
  * @param {string} text - Text to convert
  * @param {Object} settings - User settings
  * @returns {ArrayBuffer} Audio data
  */
 async function callTTSApi(text, settings) {
-  const response = await fetch(TTS_API_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${settings.apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: settings.model || 'tts-1',
-      input: text,
-      voice: settings.voice || 'nova',
-      response_format: 'mp3'
-    })
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TTS_API_TIMEOUT_MS);
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
+  try {
+    const response = await fetch(TTS_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${settings.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: settings.model || 'tts-1',
+        input: text,
+        voice: settings.voice || 'nova',
+        response_format: 'mp3'
+      }),
+      signal: controller.signal
+    });
 
-    if (response.status === 401) {
-      throw new Error('Invalid API key. Please check your OpenAI API key in settings.');
-    } else if (response.status === 429) {
-      throw new Error('Rate limit exceeded. Please wait a moment and try again.');
-    } else if (response.status === 400) {
-      throw new Error(errorData.error?.message || 'Invalid request to TTS API.');
-    } else {
-      throw new Error(`TTS API error: ${response.status}`);
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+
+      if (response.status === 401) {
+        throw new Error('Invalid API key. Please check your OpenAI API key in settings.');
+      } else if (response.status === 429) {
+        throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+      } else if (response.status === 400) {
+        throw new Error(errorData.error?.message || 'Invalid request to TTS API.');
+      } else {
+        throw new Error(`TTS API error: ${response.status}`);
+      }
     }
-  }
 
-  return await response.arrayBuffer();
+    return await response.arrayBuffer();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('TTS API request timed out. Please try again.');
+    }
+    throw error;
+  }
 }
 
 /**
@@ -306,17 +339,41 @@ async function updatePlayerStatus(tabId, status, text, audioUrl = null) {
 }
 
 /**
+ * Clean up a conversion entry and revoke its blob URL
+ * @param {string} articleUrl - The article URL key in the conversion queue
+ */
+function cleanupConversionEntry(articleUrl) {
+  const entry = conversionQueue.get(articleUrl);
+  if (entry) {
+    try {
+      URL.revokeObjectURL(entry.audioUrl);
+    } catch (e) {
+      // Ignore errors if URL already revoked
+    }
+    conversionQueue.delete(articleUrl);
+    console.log('Cleaned up blob URL for:', articleUrl);
+  }
+}
+
+/**
  * Handle audio download
  * @param {string} url - Blob URL of audio
  * @param {string} filename - Desired filename
  */
 async function downloadAudio(url, filename) {
   try {
-    // Sanitize filename
-    const sanitizedFilename = filename
+    // Sanitize filename - ensure we have a valid name
+    let sanitizedFilename = (filename || 'article')
       .replace(/[^a-zA-Z0-9\s\-_.]/g, '')
       .replace(/\s+/g, '-')
-      .substring(0, 100) + '.mp3';
+      .substring(0, 100);
+
+    // Ensure filename isn't empty after sanitization
+    if (!sanitizedFilename || sanitizedFilename === '') {
+      sanitizedFilename = 'article';
+    }
+
+    sanitizedFilename += '.mp3';
 
     await chrome.downloads.download({
       url: url,
