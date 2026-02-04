@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Article to Podcast</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <h1>🎧 Article to Podcast</h1>
+    </header>
+
+    <!-- Loading State -->
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Analyzing page...</p>
+    </div>
+
+    <!-- Error State -->
+    <div id="error" class="error hidden">
+      <div class="error-icon">⚠️</div>
+      <p id="error-message">Unable to extract article from this page.</p>
+      <button id="retry-btn" class="btn btn-secondary">Try Again</button>
+    </div>
+
+    <!-- No API Key State -->
+    <div id="no-api-key" class="no-api-key hidden">
+      <div class="icon">🔑</div>
+      <h2>API Key Required</h2>
+      <p>Enter your OpenAI API key to start converting articles to audio.</p>
+      <input type="password" id="api-key-input" placeholder="sk-..." class="input">
+      <button id="save-api-key" class="btn btn-primary">Save API Key</button>
+      <a href="https://platform.openai.com/api-keys" target="_blank" class="link">Get an API key →</a>
+    </div>
+
+    <!-- Article Preview -->
+    <div id="article-preview" class="article-preview hidden">
+      <div class="article-info">
+        <h2 id="article-title" class="article-title">Article Title</h2>
+        <div class="article-meta">
+          <span id="article-author" class="meta-item"></span>
+          <span id="article-site" class="meta-item"></span>
+        </div>
+        <div class="article-stats">
+          <span class="stat">
+            <span class="stat-icon">📖</span>
+            <span id="word-count">0</span> words
+          </span>
+          <span class="stat">
+            <span class="stat-icon">⏱️</span>
+            ~<span id="read-time">0</span> min listen
+          </span>
+        </div>
+      </div>
+
+      <!-- Voice Selection -->
+      <div class="voice-section">
+        <label class="label">Voice</label>
+        <select id="voice-select" class="select">
+          <option value="nova">Nova (Warm & Clear)</option>
+          <option value="alloy">Alloy (Balanced)</option>
+          <option value="echo">Echo (Smooth)</option>
+          <option value="fable">Fable (Expressive)</option>
+          <option value="onyx">Onyx (Deep)</option>
+          <option value="shimmer">Shimmer (Soft)</option>
+        </select>
+      </div>
+
+      <!-- Convert Button -->
+      <button id="convert-btn" class="btn btn-primary btn-large">
+        <span class="btn-icon">🎙️</span>
+        Convert to Audio
+      </button>
+
+      <!-- Conversion Progress -->
+      <div id="conversion-progress" class="conversion-progress hidden">
+        <div class="progress-bar">
+          <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <p id="progress-text" class="progress-text">Starting conversion...</p>
+      </div>
+    </div>
+
+    <!-- Usage Footer -->
+    <footer id="usage-footer" class="footer hidden">
+      <div class="usage">
+        <span id="usage-text">10 free articles remaining</span>
+        <button id="upgrade-btn" class="btn btn-upgrade">Upgrade</button>
+      </div>
+    </footer>
+
+    <!-- Settings Button -->
+    <button id="settings-btn" class="settings-btn" title="Settings">⚙️</button>
+
+    <!-- Settings Panel -->
+    <div id="settings-panel" class="settings-panel hidden">
+      <div class="settings-header">
+        <h2>Settings</h2>
+        <button id="close-settings" class="close-btn">×</button>
+      </div>
+      <div class="settings-content">
+        <div class="setting-item">
+          <label>OpenAI API Key</label>
+          <input type="password" id="settings-api-key" placeholder="sk-..." class="input">
+        </div>
+        <div class="setting-item">
+          <label>Quality</label>
+          <select id="model-select" class="select">
+            <option value="tts-1">Standard (Faster)</option>
+            <option value="tts-1-hd">HD (Higher Quality)</option>
+          </select>
+        </div>
+        <button id="save-settings" class="btn btn-primary">Save Settings</button>
+      </div>
+    </div>
+
+    <!-- Limit Reached Modal -->
+    <div id="limit-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2>Monthly Limit Reached</h2>
+        <p>You've used all 10 free articles this month.</p>
+        <p class="small">Your limit resets on the 1st of next month.</p>
+        <a href="https://example.com/waitlist" target="_blank" class="btn btn-primary">Join Waitlist for Pro</a>
+        <button id="close-modal" class="btn btn-secondary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

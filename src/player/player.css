@@ -1,0 +1,248 @@
+/*
+ * Floating Player Styles
+ * Note: These styles are also embedded in content.js for shadow DOM injection
+ */
+
+:host {
+  all: initial;
+}
+
+.player-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 320px;
+  background: #1a1a2e;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  z-index: 2147483647;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.player-container.collapsed {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.player-container.collapsed .player-content {
+  display: none;
+}
+
+.player-container.collapsed .collapse-btn {
+  display: none;
+}
+
+.player-container.collapsed .collapsed-icon {
+  display: flex;
+}
+
+.collapsed-icon {
+  display: none;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 24px;
+}
+
+.player-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #4F46E5, #7C3AED);
+}
+
+.player-title {
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.collapse-btn {
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 4px;
+  font-size: 18px;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.collapse-btn:hover {
+  opacity: 1;
+}
+
+.player-content {
+  padding: 16px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.control-btn {
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  font-size: 20px;
+  padding: 8px;
+  border-radius: 50%;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.control-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.control-btn:active {
+  transform: scale(0.95);
+}
+
+.play-btn {
+  font-size: 28px;
+  background: #4F46E5;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.play-btn:hover {
+  background: #6366F1;
+}
+
+.progress-container {
+  margin-bottom: 12px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #333;
+  border-radius: 3px;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4F46E5, #7C3AED);
+  width: 0%;
+  transition: width 0.1s linear;
+}
+
+.time-display {
+  display: flex;
+  justify-content: space-between;
+  color: #888;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.bottom-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.speed-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speed-btn {
+  background: #333;
+  border: none;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.speed-btn:hover {
+  background: #444;
+}
+
+.speed-btn.active {
+  background: #4F46E5;
+}
+
+.download-btn {
+  background: none;
+  border: 1px solid #4F46E5;
+  color: #4F46E5;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.download-btn:hover {
+  background: #4F46E5;
+  color: white;
+}
+
+audio {
+  display: none;
+}
+
+.loading {
+  display: none;
+  text-align: center;
+  padding: 20px;
+  color: white;
+}
+
+.loading.visible {
+  display: block;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #333;
+  border-top-color: #4F46E5;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 12px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-message {
+  display: none;
+  text-align: center;
+  padding: 16px;
+  color: #ef4444;
+  font-size: 13px;
+}
+
+.error-message.visible {
+  display: block;
+}

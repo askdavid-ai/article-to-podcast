@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="player.css">
+</head>
+<body>
+  <!--
+    This file exists for web_accessible_resources declaration.
+    The actual player is injected via shadow DOM in content.js for better isolation.
+  -->
+  <div class="player-container">
+    <div class="collapsed-icon">🎧</div>
+    <div class="player-header">
+      <span class="player-title">Now Playing</span>
+      <button class="collapse-btn" title="Minimize">−</button>
+    </div>
+    <div class="player-content">
+      <div class="controls">
+        <button class="control-btn rewind-btn" title="Rewind 15s">⏪</button>
+        <button class="control-btn play-btn" title="Play">▶</button>
+        <button class="control-btn forward-btn" title="Forward 15s">⏩</button>
+      </div>
+      <div class="progress-container">
+        <div class="progress-bar">
+          <div class="progress-fill"></div>
+        </div>
+        <div class="time-display">
+          <span class="current-time">0:00</span>
+          <span class="duration">0:00</span>
+        </div>
+      </div>
+      <div class="bottom-controls">
+        <div class="speed-control">
+          <button class="speed-btn" data-speed="0.75">0.75x</button>
+          <button class="speed-btn active" data-speed="1">1x</button>
+          <button class="speed-btn" data-speed="1.5">1.5x</button>
+          <button class="speed-btn" data-speed="2">2x</button>
+        </div>
+        <button class="download-btn" title="Download MP3">⬇ MP3</button>
+      </div>
+    </div>
+    <audio></audio>
+  </div>
+</body>
+</html>
