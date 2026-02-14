@@ -26,16 +26,6 @@
       <button id="retry-btn" class="btn btn-secondary">Try Again</button>
     </div>
 
-    <!-- No API Key State -->
-    <div id="no-api-key" class="no-api-key hidden">
-      <div class="icon">🔑</div>
-      <h2>API Key Required</h2>
-      <p>Enter your OpenAI API key to start converting articles to audio.</p>
-      <input type="password" id="api-key-input" placeholder="sk-..." class="input">
-      <button id="save-api-key" class="btn btn-primary">Save API Key</button>
-      <a href="https://platform.openai.com/api-keys" target="_blank" class="link">Get an API key →</a>
-    </div>
-
     <!-- Article Preview -->
     <div id="article-preview" class="article-preview hidden">
       <div class="article-info">
@@ -103,15 +93,16 @@
       </div>
       <div class="settings-content">
         <div class="setting-item">
-          <label>OpenAI API Key</label>
-          <input type="password" id="settings-api-key" placeholder="sk-..." class="input">
-        </div>
-        <div class="setting-item">
           <label>Quality</label>
           <select id="model-select" class="select">
             <option value="tts-1">Standard (Faster)</option>
             <option value="tts-1-hd">HD (Higher Quality)</option>
           </select>
+        </div>
+        <div class="setting-item">
+          <label>Your Podcast Feed</label>
+          <input type="text" id="feed-url" readonly class="input" placeholder="Convert an article to get your feed URL">
+          <button id="copy-feed-btn" class="btn btn-secondary btn-small">Copy</button>
         </div>
         <button id="save-settings" class="btn btn-primary">Save Settings</button>
       </div>
@@ -123,7 +114,7 @@
         <h2>Monthly Limit Reached</h2>
         <p>You've used all 10 free articles this month.</p>
         <p class="small">Your limit resets on the 1st of next month.</p>
-        <a href="https://example.com/waitlist" target="_blank" class="btn btn-primary">Join Waitlist for Pro</a>
+        <a href="https://articlepod.app/upgrade" target="_blank" class="btn btn-primary">Upgrade to Pro</a>
         <button id="close-modal" class="btn btn-secondary">Close</button>
       </div>
     </div>

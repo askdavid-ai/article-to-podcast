@@ -1,0 +1,31 @@
+# Article to Podcast - Backend API
+# Cloudflare Workers + R2
+
+name = "article-podcast-api"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# R2 bucket for audio storage
+# Create with: wrangler r2 bucket create article-podcast-audio
+[[r2_buckets]]
+binding = "AUDIO_BUCKET"
+bucket_name = "article-podcast-audio"
+
+# KV namespace for feed metadata
+# Create with: wrangler kv:namespace create FEEDS
+# Then update the id below with the output
+[[kv_namespaces]]
+binding = "FEEDS"
+id = "0c139cfd49f14e94a6afb37ab886fd7f"
+
+[vars]
+# Set to specific origin in production, e.g., "chrome-extension://YOUR_EXTENSION_ID"
+CORS_ORIGIN = "*"
+
+# Deployment notes:
+# 1. wrangler login
+# 2. wrangler r2 bucket create article-podcast-audio
+# 3. wrangler kv:namespace create FEEDS
+# 4. Update the KV id above
+# 5. wrangler deploy
+# 6. Your API will be at: https://article-podcast-api.<your-subdomain>.workers.dev

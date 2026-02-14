@@ -1,22 +1,76 @@
 /**
  * Background service worker for Article to Podcast extension
- * Handles TTS API calls, storage, and message coordination
+ * Handles TTS API calls via backend, storage, and message coordination
  */
 
 // Import storage module
 importScripts('lib/storage.js');
 
 // Constants
-const TTS_API_URL = 'https://api.openai.com/v1/audio/speech';
-const MAX_CHUNK_SIZE = 4000; // Leave buffer below 4096 limit
+const BACKEND_URL = 'https://article-podcast-api.articlepod.workers.dev';
 const VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 
 // Conversion queue for managing concurrent requests
-// Stores blob URLs for download - cleaned up after download or timeout
 const conversionQueue = new Map();
 
-// Auto-cleanup blob URLs after 30 minutes
-const BLOB_URL_TTL_MS = 30 * 60 * 1000;
+// Keepalive using alarms to prevent service worker termination during long conversions
+const KEEPALIVE_ALARM = 'keepalive';
+let isConverting = false;
+
+async function startKeepAlive() {
+  isConverting = true;
+  await chrome.alarms.create(KEEPALIVE_ALARM, { delayInMinutes: 0.4 });
+  console.log('Keepalive started');
+}
+
+async function stopKeepAlive() {
+  isConverting = false;
+  await chrome.alarms.clear(KEEPALIVE_ALARM);
+  console.log('Keepalive stopped');
+}
+
+// Handle alarm to keep service worker alive
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === KEEPALIVE_ALARM && isConverting) {
+    console.log('Keepalive ping via alarm');
+    await chrome.alarms.create(KEEPALIVE_ALARM, { delayInMinutes: 0.4 });
+  }
+});
+
+/**
+ * Get or create user credentials for backend API
+ */
+async function getOrCreateUserCredentials() {
+  const storage = await chrome.storage.local.get(['podcastUserId', 'podcastUserSecret', 'podcastFeedUrl']);
+  
+  if (storage.podcastUserId && storage.podcastUserSecret) {
+    return {
+      userId: storage.podcastUserId,
+      userSecret: storage.podcastUserSecret,
+      feedUrl: storage.podcastFeedUrl
+    };
+  }
+  
+  // Create new user via API
+  const response = await fetch(`${BACKEND_URL}/user/new`);
+  if (!response.ok) {
+    throw new Error('Failed to create user account');
+  }
+  const data = await response.json();
+  
+  // Store user credentials and feed URL
+  await chrome.storage.local.set({
+    podcastUserId: data.userId,
+    podcastUserSecret: data.userSecret,
+    podcastFeedUrl: data.feedUrl
+  });
+  
+  return {
+    userId: data.userId,
+    userSecret: data.userSecret,
+    feedUrl: data.feedUrl
+  };
+}
 
 /**
  * Initialize extension on install
@@ -24,7 +78,7 @@ const BLOB_URL_TTL_MS = 30 * 60 * 1000;
 chrome.runtime.onInstalled.addListener(async () => {
   console.log('Article to Podcast extension installed');
 
-  // Set default settings
+  // Set default settings (no API key needed anymore!)
   const settings = await Storage.getSettings();
   if (!settings.voice) {
     await Storage.setSettings({
@@ -32,6 +86,14 @@ chrome.runtime.onInstalled.addListener(async () => {
       model: Storage.DEFAULTS.model,
       speed: Storage.DEFAULTS.speed
     });
+  }
+  
+  // Pre-create user account
+  try {
+    await getOrCreateUserCredentials();
+    console.log('User account created');
+  } catch (e) {
+    console.log('Will create user account on first conversion');
   }
 });
 
@@ -70,7 +132,7 @@ async function handleMessage(message, sender, sendResponse) {
         break;
 
       case 'convertArticle':
-        const tabId = sender.tab?.id;
+        const tabId = message.tabId || sender.tab?.id;
         if (!tabId) {
           sendResponse({ success: false, error: 'Cannot determine tab ID' });
           break;
@@ -88,6 +150,11 @@ async function handleMessage(message, sender, sendResponse) {
         const history = await Storage.getHistory();
         sendResponse({ success: true, history });
         break;
+        
+      case 'getUserCredentials':
+        const credentials = await getOrCreateUserCredentials();
+        sendResponse({ success: true, credentials });
+        break;
 
       default:
         sendResponse({ error: 'Unknown action' });
@@ -99,13 +166,13 @@ async function handleMessage(message, sender, sendResponse) {
 }
 
 /**
- * Convert article text to audio
+ * Convert article text to audio via backend
  * @param {Object} article - Article data from content script
  * @param {number} tabId - Tab ID for sending status updates
  */
 async function convertArticle(article, tabId) {
   try {
-    // Check usage limits
+    // Check usage limits (local tracking)
     const canConvert = await Storage.canConvert();
     if (!canConvert) {
       updatePlayerStatus(tabId, 'error', 'Monthly limit reached. Upgrade for unlimited conversions.');
@@ -115,10 +182,8 @@ async function convertArticle(article, tabId) {
     // Get settings
     const settings = await Storage.getSettings();
 
-    if (!settings.apiKey) {
-      updatePlayerStatus(tabId, 'error', 'Please set your OpenAI API key in the extension settings.');
-      return;
-    }
+    // Start keepalive to prevent service worker termination
+    startKeepAlive();
 
     // Show player with loading state
     await chrome.tabs.sendMessage(tabId, {
@@ -126,47 +191,57 @@ async function convertArticle(article, tabId) {
       options: { title: article.title }
     });
 
-    updatePlayerStatus(tabId, 'loading', 'Extracting article...');
+    updatePlayerStatus(tabId, 'loading', 'Preparing conversion...');
 
-    // Chunk the text
-    const chunks = chunkText(article.content);
-    const totalChunks = chunks.length;
-
-    console.log(`Converting article: ${article.title} (${totalChunks} chunks)`);
-
-    // Convert each chunk
-    const audioChunks = [];
-    for (let i = 0; i < chunks.length; i++) {
-      updatePlayerStatus(tabId, 'loading', `Converting to audio (${i + 1}/${totalChunks})...`);
-
-      const audioData = await callTTSApi(chunks[i], settings);
-      audioChunks.push(audioData);
+    // Get or create user credentials
+    let credentials;
+    try {
+      credentials = await getOrCreateUserCredentials();
+    } catch (e) {
+      updatePlayerStatus(tabId, 'error', 'Failed to initialize. Please check your internet connection.');
+      stopKeepAlive();
+      return;
     }
 
-    // Stitch audio chunks
-    updatePlayerStatus(tabId, 'loading', 'Preparing audio...');
-    const finalAudio = await stitchAudioChunks(audioChunks);
+    updatePlayerStatus(tabId, 'loading', 'Converting to audio...');
 
-    // Create blob URL
-    const blob = new Blob([finalAudio], { type: 'audio/mpeg' });
-    const audioUrl = URL.createObjectURL(blob);
+    console.log(`Converting article: ${article.title}`);
 
-    // Store in cache for download with TTL for cleanup
-    const cacheEntry = {
-      audioUrl,
-      blob,
-      title: article.title,
-      author: article.author,
-      createdAt: Date.now()
-    };
-    conversionQueue.set(article.url, cacheEntry);
+    // Call backend TTS endpoint
+    const response = await fetch(`${BACKEND_URL}/convert`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        userId: credentials.userId,
+        userSecret: credentials.userSecret,
+        text: article.content,
+        voice: settings.voice || 'nova',
+        model: settings.model || 'tts-1',
+        title: article.title
+      })
+    });
 
-    // Schedule cleanup after TTL
-    setTimeout(() => {
-      cleanupConversionEntry(article.url);
-    }, BLOB_URL_TTL_MS);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      
+      if (response.status === 429) {
+        throw new Error(errorData.error || 'Daily conversion limit reached. Try again tomorrow.');
+      } else if (response.status === 503) {
+        throw new Error('Service temporarily unavailable. Please try again.');
+      } else {
+        throw new Error(errorData.error || 'Conversion failed. Please try again.');
+      }
+    }
 
-    // Increment usage
+    // Get audio data
+    const audioData = await response.arrayBuffer();
+    
+    // Convert to base64 to send to content script
+    const base64Audio = arrayBufferToBase64(audioData);
+
+    // Increment local usage counter
     await Storage.incrementUsage();
 
     // Add to history
@@ -179,158 +254,30 @@ async function convertArticle(article, tabId) {
     });
 
     // Update player with audio
-    updatePlayerStatus(tabId, 'ready', null, audioUrl);
+    updatePlayerStatus(tabId, 'ready', null, null, base64Audio, article.title);
 
+    stopKeepAlive();
     console.log('Article converted successfully');
+    
   } catch (error) {
+    stopKeepAlive();
     console.error('Conversion error:', error);
     updatePlayerStatus(tabId, 'error', error.message || 'Conversion failed. Please try again.');
   }
 }
 
 /**
- * Split text into chunks respecting API limits and sentence boundaries
- * @param {string} text - Full article text
- * @returns {string[]} Array of text chunks
- */
-function chunkText(text) {
-  const chunks = [];
-  const paragraphs = text.split(/\n\n+/);
-  let currentChunk = '';
-
-  for (const paragraph of paragraphs) {
-    // If paragraph itself is too long, split by sentences
-    if (paragraph.length > MAX_CHUNK_SIZE) {
-      // Flush current chunk first
-      if (currentChunk) {
-        chunks.push(currentChunk.trim());
-        currentChunk = '';
-      }
-
-      // Split paragraph by sentences
-      const sentences = paragraph.match(/[^.!?]+[.!?]+/g) || [paragraph];
-
-      for (const sentence of sentences) {
-        if (currentChunk.length + sentence.length > MAX_CHUNK_SIZE) {
-          if (currentChunk) {
-            chunks.push(currentChunk.trim());
-          }
-          currentChunk = sentence;
-        } else {
-          currentChunk += (currentChunk ? ' ' : '') + sentence;
-        }
-      }
-    } else if (currentChunk.length + paragraph.length + 2 > MAX_CHUNK_SIZE) {
-      // Current chunk is full, start new one
-      chunks.push(currentChunk.trim());
-      currentChunk = paragraph;
-    } else {
-      // Add paragraph to current chunk
-      currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
-    }
-  }
-
-  // Don't forget the last chunk
-  if (currentChunk.trim()) {
-    chunks.push(currentChunk.trim());
-  }
-
-  return chunks;
-}
-
-// Timeout for TTS API calls (60 seconds per chunk)
-const TTS_API_TIMEOUT_MS = 60000;
-
-/**
- * Call OpenAI TTS API with timeout
- * @param {string} text - Text to convert
- * @param {Object} settings - User settings
- * @returns {ArrayBuffer} Audio data
- */
-async function callTTSApi(text, settings) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TTS_API_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(TTS_API_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${settings.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: settings.model || 'tts-1',
-        input: text,
-        voice: settings.voice || 'nova',
-        response_format: 'mp3'
-      }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-
-      if (response.status === 401) {
-        throw new Error('Invalid API key. Please check your OpenAI API key in settings.');
-      } else if (response.status === 429) {
-        throw new Error('Rate limit exceeded. Please wait a moment and try again.');
-      } else if (response.status === 400) {
-        throw new Error(errorData.error?.message || 'Invalid request to TTS API.');
-      } else {
-        throw new Error(`TTS API error: ${response.status}`);
-      }
-    }
-
-    return await response.arrayBuffer();
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error('TTS API request timed out. Please try again.');
-    }
-    throw error;
-  }
-}
-
-/**
- * Stitch multiple audio chunks into a single file
- * @param {ArrayBuffer[]} chunks - Array of audio data
- * @returns {ArrayBuffer} Combined audio
- */
-async function stitchAudioChunks(chunks) {
-  if (chunks.length === 1) {
-    return chunks[0];
-  }
-
-  // For MP3, we can simply concatenate the chunks
-  // This works because each chunk is a valid MP3 file
-  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-  const combined = new Uint8Array(totalLength);
-
-  let offset = 0;
-  for (const chunk of chunks) {
-    combined.set(new Uint8Array(chunk), offset);
-    offset += chunk.byteLength;
-  }
-
-  return combined.buffer;
-}
-
-/**
  * Send status update to content script player
- * @param {number} tabId - Tab ID
- * @param {string} status - Status type (loading, ready, error)
- * @param {string} text - Status text or error message
- * @param {string} audioUrl - Audio URL (for ready status)
  */
-async function updatePlayerStatus(tabId, status, text, audioUrl = null) {
+async function updatePlayerStatus(tabId, status, text, audioUrl = null, audioBase64 = null, title = null) {
   try {
     await chrome.tabs.sendMessage(tabId, {
       action: 'updatePlayerStatus',
       status,
       text,
       audioUrl,
+      audioBase64,
+      title,
       error: status === 'error' ? text : null
     });
   } catch (error) {
@@ -339,36 +286,27 @@ async function updatePlayerStatus(tabId, status, text, audioUrl = null) {
 }
 
 /**
- * Clean up a conversion entry and revoke its blob URL
- * @param {string} articleUrl - The article URL key in the conversion queue
+ * Convert ArrayBuffer to base64 string
  */
-function cleanupConversionEntry(articleUrl) {
-  const entry = conversionQueue.get(articleUrl);
-  if (entry) {
-    try {
-      URL.revokeObjectURL(entry.audioUrl);
-    } catch (e) {
-      // Ignore errors if URL already revoked
-    }
-    conversionQueue.delete(articleUrl);
-    console.log('Cleaned up blob URL for:', articleUrl);
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
   }
+  return btoa(binary);
 }
 
 /**
  * Handle audio download
- * @param {string} url - Blob URL of audio
- * @param {string} filename - Desired filename
  */
 async function downloadAudio(url, filename) {
   try {
-    // Sanitize filename - ensure we have a valid name
     let sanitizedFilename = (filename || 'article')
       .replace(/[^a-zA-Z0-9\s\-_.]/g, '')
       .replace(/\s+/g, '-')
       .substring(0, 100);
 
-    // Ensure filename isn't empty after sanitization
     if (!sanitizedFilename || sanitizedFilename === '') {
       sanitizedFilename = 'article';
     }
@@ -385,7 +323,6 @@ async function downloadAudio(url, filename) {
   }
 }
 
-// Keep service worker alive during long conversions
 chrome.runtime.onStartup.addListener(() => {
   console.log('Article to Podcast service worker started');
 });
